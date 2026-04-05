@@ -1,0 +1,10 @@
+[package]
+name = "LinkedList3"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+
+[lib]
+name = "linked_list"
+path = "src/lib.rs"

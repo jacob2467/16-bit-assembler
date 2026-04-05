@@ -1,0 +1,5 @@
+**/*.hex
+**/input.asm
+**/binary.txt
+**/*.idea
+**/target
