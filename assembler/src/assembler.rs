@@ -9,23 +9,14 @@ use ErrorKind::*;
 
 /*
 TODO:
-- Implement the following instructions:
-    - slt
-    - jal = 1010
-    - beq = 0111
-    - bne = 1001
-    - andi
-    - ori
-    - subi
-    - mov
-    - cp
-    - inc
-    - dec
--
+- Implement instructions specified in instruction_word_notes.asm
+- Figure out how to deal with errors that happen in generated assembly lines
+- Add guards against the use of reserved register names
+    - Both for aliases and for regular use, where applicable
  */
 
 pub const MAX_REGISTER: usize = 15; // registers 12-15 are reserved (rasp, rara, rat, razero)
-pub const REGISTER_PREFIX: &str = "ra";
+pub const REGISTER_PREFIX: &str = "ra"; // (stack pointer, return address, temporary, zero) ^
 pub const RAT_ADDR: usize = 14;
 
 // Bit width & max values for immediates
@@ -39,7 +30,7 @@ const MAX_LI_IMM: usize = 255;	  // highest immediate value we can use with li
 const MAX_JMPI_IMM: usize = 4095;
 const MAX_16BIT: usize = 65_535;
 
-// Instruction name constants 
+// Instruction name constants
 const LW: &str = "lw";
 const SW: &str = "sw";
 const JMPR: &str = "jmpr";
@@ -365,7 +356,7 @@ impl<'a> Assembler<'a> {
         let mut msg: String = match err {
             InvalidArgument => "\nInvalid argument".to_string(),
             AliasError => "\nInvalid alias".to_string(),
-            SyntaxError => "\nSyntax error".to_string()
+            SyntaxError => "\nSyntax (or unknown) error".to_string()
         };
         msg.push_str(&format!(" on line {line_num}{pos}:\n\t{contents}\n{explanation}"));
         AssemblyError::new(err, &msg)
@@ -467,31 +458,31 @@ impl<'a> Assembler<'a> {
             [ITypeJmp, Imm] => self.parse_jmp_i_type(),
 
             // Invalid inputs
-            [RTypeInstr, _, _, Imm] => Err(self.format_err(InvalidArgument, Some(3), Some(
-                "R-type instructions don't take an immediate value."))),
+            [RTypeInstr, _, _, Imm] => Err(self.format_err(InvalidArgument, Some(4), Some(
+                "R-type instructions don't take an immediate value as an argument."))),
 
-            [ITypeInstr, _, _, Reg] => Err(self.format_err(InvalidArgument, Some(3), Some(
-                "I-type instructions take an immediate value, not a register, at position 4."))),
+            [ITypeInstr, _, _, Reg] => Err(self.format_err(InvalidArgument, Some(4), Some(
+                "I-type instructions take an immediate value, not a register."))),
 
-            [MemInstr, _, _, Reg] => Err(self.format_err(InvalidArgument, Some(3), Some(&format!(
+            [MemInstr, _, _, Reg] => Err(self.format_err(InvalidArgument, Some(4), Some(&format!(
                 "Base address register needs parentheses, e.g. ({REGISTER_PREFIX}0) instead of {REGISTER_PREFIX}0")))),
 
-            [MemInstr, _, _, Imm] => Err(self.format_err(InvalidArgument, Some(3), Some(
-                "Immediate value goes at position 3, not 4, for memory-type instructions."))),
+            [MemInstr, _, _, _] => Err(self.format_err(InvalidArgument, Some(4), Some(
+                "Memory instructions only take 3 arguments"))),
 
-            [Reg | Imm | BaseAddrReg, ..] => Err(self.format_err(InvalidArgument, Some(0), Some(
+            [Reg | Imm | BaseAddrReg, ..] => Err(self.format_err(InvalidArgument, Some(1), Some(
                 "The first argument must be an operation."))),
 
-            [RTypeJmp, Imm] => Err(self.format_err(InvalidArgument, Some(1), Some(
+            [RTypeJmp, Imm] => Err(self.format_err(InvalidArgument, Some(2), Some(
                 "This argument must be a register, not an immediate value."))),
 
-            [ITypeJmp, Reg] => Err(self.format_err(InvalidArgument, Some(1), Some(
+            [ITypeJmp, Reg] => Err(self.format_err(InvalidArgument, Some(2), Some(
                 "This argument must be an immediate value, not a register."))),
 
-            [RTypeJmp, _, ..] => Err(self.format_err(InvalidArgument, Some(1), Some(&format!(
+            [RTypeJmp, _, ..] => Err(self.format_err(InvalidArgument, Some(2), Some(&format!(
                 "Too many arguments: {JMPR} only takes the destination register as an argument.")))),
 
-            [ITypeJmp, _, ..] => Err(self.format_err(InvalidArgument, Some(1), Some(&format!(
+            [ITypeJmp, _, ..] => Err(self.format_err(InvalidArgument, Some(2), Some(&format!(
                 "Too many arguments: {JMPI} only takes an immediate value as an argument.")))),
 
             _ => Err(AssemblyError::new(SyntaxError, &format!(
@@ -602,10 +593,16 @@ impl<'a> Assembler<'a> {
             let mut expanded_instructions: Vec<AssemblyLine> = self.load_large_imm(imm)?;
 
             // Create the final line that uses the value now stored in rat
-            let new_op: &str = self.map_i_to_r_type(op)?;
             let final_line = AssemblyLine {
                 num: expanded_instructions.len() + 1,
-                contents: format!("{new_op} {} {rat}", &args[1])
+                contents: {
+                    if op == LI {
+                        format!("{} {} {} {}", ADDI, &args[1], rat, 0)
+                    } else {
+                        let new_op: &str = self.map_i_to_r_type(op)?;
+                        format!("{} {} {}", new_op, &args[1], rat)
+                    }
+                }
             };
             expanded_instructions.push(final_line);
 

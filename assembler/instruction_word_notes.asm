@@ -11,7 +11,7 @@ OP DST SRC1/IMM SRC2/IMM
 # but first bit being 1 *usually* means an IMM instruction... just not always
 Opcode encoding:
 add     = 0000
-and     = 0001  # andi and ori become pseudo-instructions that use $at with the immediate value
+and     = 0001  # andi and ori become pseudo-instructions that use rat with the immediate value
 or      = 0010
 sub     = 0011  # subi inverts the immediate and assembles to use addi instead
 jmpr    = 0110

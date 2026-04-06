@@ -1,8 +1,10 @@
 ; this is a comment!
+; this program reverses the order of an "array" of length 6 located at memory addresses 0-5.
+
 addi ra7 ra7 3 ; inline comments work too
 
 lw ra0, 2 (ra7) ; you can use commas between arguments
-;lw ra0, 2, (ra7) ; but this doesn't work because the last base address and offset are treated as one argument
+; lw ra0, 2, (ra7) ; but this doesn't work because the last base address and offset are treated as one argument
                   ; try uncommenting it and see what happens!
 lw ra2 0 (ra7)
 lw ra1 1 (ra7)
@@ -11,7 +13,8 @@ lw ra4 1 (ra6)
 lw ra5 0 (ra6)
 
 ; you can define aliases to make your code more readable
-zero = 0          ; substitute 0 in anywhere "zero" is found before the code is assembled
+zero = 0	; substitute 0 in anywhere "zero" is found before the code is assembled
+; this is terrible and probably makes the code *less* readable, but you get the point
 
 sw ra0 zero (ra6) ; equivalent to "sw ra0 0 (ra6)"
 
@@ -34,5 +37,5 @@ sw ra5 5 (zero_base_addr)
 ; aliases can't point to one another
 ; zero_base_addr_but_cooler = zero_base_addr ; try uncommenting this line and see what happens!
 
-jmp 0
+jmpi 0
 jmpr ra0
