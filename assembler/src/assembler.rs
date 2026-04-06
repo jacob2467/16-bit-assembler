@@ -113,7 +113,7 @@ enum Arg {
 
 enum LineType {
     Empty,
-    Alias,
+    AliasDeclaration,
     Instruction
 }
 
@@ -255,7 +255,7 @@ impl<'a> Assembler<'a> {
         Ok(())
     }
 
-    /// Parse the program into
+    /// Parse the program into machine code and expanded assembly code.
     /// # Returns
     /// - `Ok(String, String)` - the machine code and assembly code, respectively
     /// - `Err(AssemblyError)` if there was an error assembling the program
@@ -264,16 +264,15 @@ impl<'a> Assembler<'a> {
         let mut asm_code = String::new();
 
         for line in &self.instructions {
-            self.cur_line = line.clone();
+            self.cur_line = self.substitute_aliases(line.clone());
             match self.get_line_type() {
                 LineType::Empty => (),
-                LineType::Alias => {
+                LineType::AliasDeclaration => {
                     let (name, value) = self.parse_alias()?;
                     self.aliases.insert(name, value);
                 },
                 LineType::Instruction => {
-                    let parsed_line_result = self.parse_instruction();
-
+                    let parsed_line_result = self.parse_instruction(line);
                     match parsed_line_result {
                         Ok(parsed_line) => {
                             let binary_line = &parsed_line.0;
@@ -336,7 +335,7 @@ impl<'a> Assembler<'a> {
         let line: &AssemblyLine = &self.cur_line;
         match line {
             line if line.contents.is_empty() => LineType::Empty,
-            line if is_alias(&line.contents) => LineType::Alias,
+            line if is_alias(&line.contents) => LineType::AliasDeclaration,
             _ => LineType::Instruction
         }
     }
@@ -354,7 +353,7 @@ impl<'a> Assembler<'a> {
         let contents = &line.contents;
 
         let pos = match pos_opt {
-            Some(pos) => format!(", position {}", pos + 1),
+            Some(pos) => format!(", position {}", pos),
             None => "".to_string()
         };
 
@@ -393,21 +392,6 @@ impl<'a> Assembler<'a> {
     /// - `Ok(Arg)` the type of assembly word, if it's a valid word
     /// - `Err(AssemblyError)` if the assembly word is invalid
     fn find_arg_type(&self, word: &str, arg_pos: usize) -> Result<Arg, AssemblyError> {
-        let aliases = &self.aliases;
-
-        // Recursive call if arg is an alias
-        let stripped = remove_parentheses(word);
-        if let Some(value) = aliases.get(&stripped) {
-            return match word {
-                // If arg is an alias inside parentheses for mem. instr. base address, strip them off to read the
-                // register inside, then put them back
-                word if is_in_parentheses(word) => self.find_arg_type(&format!("({})", value), arg_pos),
-
-                word if word.starts_with('(') => Err(self.format_err(InvalidArgument, Some(3), None)),
-
-                _ => self.find_arg_type(value, arg_pos)
-            }
-        }
 
         // Match arg type
         match word {
@@ -426,13 +410,51 @@ impl<'a> Assembler<'a> {
     }
 
 
+    /// Substitute all aliases found in an assembly line.
+    /// # Arguments
+    /// - `line` - the assembly line to read
+    /// # Returns
+    /// - the assembly line, with all encountered aliases substituted for their values
+    fn substitute_aliases(&self, mut line: AssemblyLine) -> AssemblyLine {
+        // Note: The implementation for this method is pretty terrible. I kind of just threw something together
+        // because I wanted it to work. I'll probably make it better if and when I come back to the project.
+        // TODO: Refactor this
+        let aliases = &self.aliases;
+
+        let mut subbed_arg: String = String::new();
+        // Iterate over the arguments and substitute all the ones that are in the aliases HashMap with their values
+        line.contents = {
+            split_args(&line)
+            .into_iter()
+            .map(|arg| String::from({
+                // If the arg is in the aliases HashMap
+                if let Some(alias_value) = aliases.get(&arg) {
+                    alias_value
+                } else {
+                    // If the arg is in parentheses, remove them and check the aliases HashMap, then add them back
+                    let stripped = remove_parentheses(&arg);
+                    if let Some(alias_value) = aliases.get(&stripped) {
+                        subbed_arg = add_parentheses(&alias_value);
+                        &subbed_arg
+                    } else {
+                        &arg
+                    }
+                }
+            }))
+            .collect::<Vec<_>>()
+            .join(" ")
+        };
+       line
+    }
+
+
     /// Parse one assembly instruction (a full line) into its corresponding machine code.
+    /// # Arguments
+    /// - `original_line` - the original line of assembly code as written, before aliases were substituted
     /// # Returns
     /// - `Ok(String)` - the machine code as a String, if the assembly was parsed successfully
     /// - `Err(AssemblyError)` - if the line fails to be parsed properly
-    fn parse_instruction(&self) -> Result<(String, String), AssemblyError> {
-        let line: &AssemblyLine = &self.cur_line;
-
+    fn parse_instruction(&self, original_line: &AssemblyLine) -> Result<(String, String), AssemblyError> {
         let arg_types = self.parse_instr_arg_types()?;
 
         match arg_types.as_slice() {
@@ -473,7 +495,7 @@ impl<'a> Assembler<'a> {
                 "Too many arguments: {JMPI} only takes an immediate value as an argument.")))),
 
             _ => Err(AssemblyError::new(SyntaxError, &format!(
-                "Syntax error on line {}: \n\t{}", line.num, line.contents)))
+                "Syntax error on line {}: \n\t{}", original_line.num, original_line.contents)))
         }
     }
 
@@ -764,11 +786,6 @@ impl<'a> Assembler<'a> {
     /// - `Ok(String)` - the machine code for the operation, e.g. 0000
     /// - `Err(AssemblyError)` if the operation doesn't exist
     fn get_opcode(&self, op: &str) -> Result<String, AssemblyError> {
-        // Recursive call if the operation is an alias
-        if let Some(value) = self.aliases.get(&op.to_string()) {
-            return self.get_opcode(value)
-        }
-        // Not an alias - get it from the lookup table
         let opcode_option = self.lookup_table.get(&op);
         match opcode_option {
             Some(opcode) => Ok(opcode.to_string()),
@@ -803,10 +820,6 @@ impl<'a> Assembler<'a> {
     /// - `Err(AssemblyError)` if there is an error while attempting to parse the register
     fn get_register_addr(&self, arg: &str, arg_num: usize) -> Result<String, AssemblyError> {
         let width = REG_ADDR_WIDTH;
-        // First check if the arg is an alias
-        if let Some(value) = self.aliases.get(&remove_parentheses(arg)) {
-            return self.get_register_addr(value, arg_num)
-        }
         // Remove register prefix (and "()", if applicable) from the arg
         let output = remove_non_numeric(arg);
 
@@ -826,12 +839,7 @@ impl<'a> Assembler<'a> {
     /// - `Ok(String)` if the argument is successfully parsed into a valid value
     /// - `Err(AssemblyError)` if the argument can't be parsed, or its value is invalid
     fn get_imm_value(&self, arg: &str, arg_num: usize, pad_to: usize) -> Result<String, AssemblyError> {
-        let max_value: usize = 2_usize.pow(pad_to as u32);
-        // If the arg is an alias, make a recursive call on its associated value
-        if let Some(value) = self.aliases.get(&arg.to_string()) {
-            return self.get_imm_value(value, arg_num, pad_to)
-        }
-
+        let max_value: usize = 2_usize.pow(pad_to as u32) - 1;
         // Parse the value as a number, then convert it to a padded binary string (with bounds checking)
         match <usize>::from_str(arg) {
             Ok(dec_addr) => Ok(self.decimal_to_binary_str(dec_addr, max_value, pad_to)?),

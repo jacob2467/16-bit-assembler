@@ -8,9 +8,8 @@ IMM  SW  LW  JMP OP    DST   SRC1  SRC2/IMM
 OP DST SRC1/IMM SRC2/IMM
 
 # Note: IMM/SW/LW are now part of opcode, rather than each being their own field
-
+# but first bit being 1 *usually* means an IMM instruction... just not always
 Opcode encoding:
-(first bit is *usually* IMM flag)
 add     = 0000
 and     = 0001  # andi and ori become pseudo-instructions that use $at with the immediate value
 or      = 0010
@@ -40,5 +39,5 @@ subi
 Regular pseudo instructions (not yet implemented):
 mov - move a value from src reg to dst reg
 cp - identical to move, except the name actually makes sense
-inc - increment a register's value by 1 (= addi ra[x] ra[x] 1)
-dec - decrement a register's value by 1 (= addi ra[x] ra[x] -1)
+inc - increment a register's value by 1 (equivalent to addi ra[x] ra[x] 1)
+dec - decrement a register's value by 1 (equivalent to addi ra[x] ra[x] -1)

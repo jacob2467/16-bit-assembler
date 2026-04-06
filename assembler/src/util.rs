@@ -119,7 +119,6 @@ pub fn split_args(line: &AssemblyLine) -> Vec<String> {
         .split_whitespace()
         .map(|word| word.to_string())
     .collect()
-
 }
 
 /// Remove all parentheses from a string slice.
@@ -135,6 +134,14 @@ pub fn remove_parentheses(word: &str) -> String {
         }
     }
     output
+}
+
+/// Surround a string slice with parentheses.
+/// - `word` - the string slice to which parentheses shall be added
+/// # Returns
+/// - A `String` with the parentheses added
+pub fn add_parentheses(word: &str) -> String {
+    format!("({word})")
 }
 
 /// Remove all non-numeric characters from a word, and return the resulting String.
